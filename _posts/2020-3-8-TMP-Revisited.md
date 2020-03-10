@@ -29,12 +29,12 @@ The goal of every type-based metaprogramming library is to start from a type T a
 ### Meta-Expressions ( typename ... Es)
 Every meta-expression in the namespace _type_expr_ respect the following concept which this is an examplar :
 ```C++
-namespace te = type_expr;
-struct te::exemplar
-{
-    template<typename ... Ts>
-    struct f { using type = /*Implementation*/};
-};
+    namespace te = type_expr;
+    struct te::exemplar
+    {
+        template<typename ... Ts>
+        struct f { using type = /*Implementation*/};
+    };
 ```
 The examplar type can also be templated. f is a variadic subtype that is supposed to receive all incoming inputs types.
 
@@ -51,9 +51,9 @@ This is the lazy version of the meta-expression magic types. It's only a holder 
 This is the actual implementation of my evaluation. It's similar to `te::pipe_t` but I didn't want to have such a big difference in behavior under one additional character. This is where all the magic happen. Using those three types, we can do some simple stuff.
 
 ```C++
-static_assert(std::is_same<
-te::eval_pipe_< te::input_<int> > // same as int 
-, int >::value,"eval to int");
+    static_assert(std::is_same<
+    te::eval_pipe_< te::input_<int> > // same as int 
+    , int >::value,"eval to int");
 ```
 
 > This is cool but boring and other libraries can do the same things easily.
