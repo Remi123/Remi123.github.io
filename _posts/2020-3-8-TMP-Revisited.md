@@ -19,7 +19,7 @@ I wanted to experiment with this newly found discovery and see where it lead to.
 1. If you want to learn TMP : Learn kvasir.mpl or boost.mp11 or boost.hana first. 
 2. The library I wrote isn't ready for production yet : There is some inconsistencies in the interface and the implementation linearise some functions up to 8 times, while kvasir.mpl goes up to 256 in some cases.
 3. Since everything here is experimental, treat this as some back-alley deals that someone (me) is trying to get you into. 
-4. My goal is simply to throw things at the comittee and say "Hey this work". 
+4. My goal is simply to throw things at the committee and say "Hey this work". 
 
 # Let's start
 [Link To the Library](https://github.com/Remi123/type_expr)
@@ -166,8 +166,9 @@ Let's show some of my favorites examples
                                     te::mkseq,
                                     te::transform_<te::input_<te::identity>>, 
                                     te::quote_<te::fork_>>
-                                    {}; // all of this eval to fork_<identity,identity,... > with N-time identity
-                                    // copy_<int I> inherit from te::fork_<te::identity,...>
+                                    {}; 
+    // all of this eval to fork_<identity,identity,... > with N-time identity
+    // copy_<int I> inherit from te::fork_<te::identity,...>
 ```
 
 `te::fork_<typename ... Es>` is the opposite of `te::transform_`. It copies the inputs received to all meta-expression `Es...` which is exactly what we wanted to do in this case.
@@ -193,7 +194,7 @@ If this is not mind-blowing enough, let's me introduce you `te::repeat_`
 `te::repeat_` is the first meta-expression that I can confidently say that no other library goes as far. I'm not saying it's impossible to implement, but they will fight their own interface due to the nesting of their meta-functions.
 If you are familiar with kvasir.mpl documentations, there is a little meta-function named ``kvasir::mpl::call_f ``with the comment literally saying "/ \brief experimental, may be depricated or changed". This is because it consider it's input as meta-function.  My library is basically an experiment of using this function all over the place.
 
-> The problem is not that I've tried making it work, the problem is that I;ve succeeded
+> The problem is not that I've tried making it work, the problem is that I've succeeded
 
 I'm now able to implement some cool function like `te::swizzle<int ... I>`
 
@@ -249,3 +250,28 @@ Since we have abstracted the whole unwrap-wrap, might as well test this function
               ,te::ls_<int[3],int[2],int[1]>>
         >::value, "Arthur O'Dwyer but with multiple types");   
 ```
+
+>That's amazing, do you have any other surprise.
+
+Well, I have this feature that is not present on every feature since I've recently implemented it, but I actually do error management. However, it's a little bit ... unconventional.
+
+Let's say you want to unwrap an `int`, which is not possible since `int ` is not a template template.
+`te::eval_pipe_<te::input_<int>, te::unwrap> test_error = int{}`. Without any error management, you would have a huge compiler message with nested error reporing. I was as tired of seeing this as you do. What I did was, since a lot of my code is centralized into what I call a context, if I know an error is produced in this context, I can just create a type named `te::error_<>` and put whatever message I wanted inside in the form of a type.
+
+In the case of unwrapping an `int`, I return something like `error_<te::unwrap,te::unspecialized, int>` because I don't have a specialization for unwrapping an int. The _very_ cool thing is that further evaluation of meta-expression will do _nothing_ once it saw that an `te::error_<>` has been evaluated. It's not perfect, if you have multiple types and one of them is an error type, then there is some possibility that I can continue with that, but it's a cool feature.
+
+Albeit weird, this system allow me to greatly reduce the compiler log size, which is my goal in 99% of the case. Not all function support it yet since it's fairly new.
+
+>Any other remarks
+
+Yes, actually I want to refine my definition of a meta-predicate
+Some of my meta-expression require some expression that are either unary of binary predicate. Something like `
+    template<typename ... BinaryPred>
+    struct sort_;`
+This need a little explaining, but a meta-expression binary-predicate can be multiple expression that take 2 types and return either `std::integral_constant<bool,false>` or `std::integral_constant<bool,true>`. Nothing else. I'm not converting into them, nor anything else.
+
+Let's say you have` te::sort_<transform_<te::size>, greater_<>>`. The sort meta-expression will give two types at a time to the sub-meta-expressions. The `te::size` will transform 1 type into their size in `std::integral_constant<int,Size>` and `te::greater_<>`, without argument, will look at those two types receive and "return" either `true_type or false_type` depending if the first is greater than the second.
+
+## What's Next
+
+I'm very satisfied with this library. In
