@@ -249,6 +249,3 @@ Since we have abstracted the whole unwrap-wrap, might as well test this function
               ,te::ls_<int[3],int[2],int[1]>>
         >::value, "Arthur O'Dwyer but with multiple types");   
 ```
-
-
-```
