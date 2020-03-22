@@ -10,7 +10,7 @@ I've been experimenting with Tmp lately to understand this arcane part of our fa
 I quickly settle for using kvasir.mpl since it had the best performance according to metaben.ch but the documentation was somewhat difficult to understand (at first !) but the vision and the continuation-style was really addicting.
 
 Fast-forward a couple of months of dev and I was able to implement myself some functions using the guts of the library.
-One problem in particular (the equivalent of std::unique in TMP) was giving me trouble. I tried to implement a particular fonction to help me with this and to my complete surprise was actually working, but found out that kvasir.mpl's INTERFACE, not the implementation, wasn't supporting this functionnality. 
+One problem in particular (the equivalent of std::unique in TMP) was giving me trouble. I tried to implement a particular fonction to help me with this and to my complete surprise was actually working, but found out that kvasir.mpl's INTERFACE ( not the implementation) wasn't supporting this functionnality. 
 
 ## November 2019
 I wanted to experiment with this newly found discovery and see where it lead to. If it didn't found something worthwhile, I wouldn't be writing a blog about it. 
@@ -51,9 +51,11 @@ This is the lazy version of the meta-expression magic types. It's only a holder 
 This is the actual implementation of my evaluation. It's similar to `te::pipe_t` but I didn't want to have such a big difference in behavior under one additional character. This is where all the magic happen. Using those three types, we can do some simple stuff.
 
 ```C++
-    static_assert(std::is_same<
-    te::eval_pipe_< te::input_<int> > // same as int 
-    , int >::value,"eval to int");
+    static_assert(
+        std::is_same< int,
+                      te::eval_pipe_< te::input_<int> > // same as int 
+        >::value
+    ,"eval to true if it's the same as int");
 ```
 
 > This is cool but boring and other libraries can do the same things easily.
@@ -67,8 +69,8 @@ What happen with this :
 What is the resulting type here ? Hint : See the definition above
 <details>
 <summary>Answer</summary>
-Each te::input ignore whatever it receive to use the types in it's template parameter instead.
-So the second te::input receive float, but use int instead. The answer is thus `int`
+Each `te::input` ignore whatever it receive to use the types in it's template parameter instead.
+So the second `te::input` receive `float`, but use `int` instead. The answer is thus `int`
 </details>
 ___
 
@@ -76,7 +78,7 @@ ___
 What is the resulting type here ?
 <details>
 <summary>Answer</summary>
-Under evaluation, te::pipe is a meta-expression that pass the incoming inputs types to the meta-expression Es... and return their result. The answer is still `int`
+Under evaluation, te::pipe is a meta-expression that pass the incoming inputs types to the meta-expression `Es...` and return their result. The answer is still `int`
 </details>
 ___
 
@@ -94,40 +96,43 @@ I know, this is the basic.
 
 Let's introduce more advanced meta-expression :
 
-`te::flatten`
+
+### te::flatten
 
 This is a necessary evil in case of multiple nested inputs like this `te::eval_pipe_<te::input_< std::string, te::input_<int>, te::input_<float>, char >,te::flatten>`. It only remove the nested `te::input_`s to result into `te::input_<std::string, int, float, char>` 
-___
-`te::unwrap`
 
-This remove the template template parameter which is useful in many place. `te::eval_pipe_<te::input_< std::tuple<int,float,char>>, te::flatten>` will result into `te::input<int,float,char> `and this allows some optimization.
-___
-`te::quote_< template<typename ... Ts> class F >`
+
+### te::unwrap
+
+This remove the template template parameter which is useful in many place. `te::eval_pipe_<te::input_< std::tuple<int,float,char>>, te::unwrap>` will result into `te::input<int,float,char> `and this allows some optimization.
+
+
+### te::quote_< template<typename ... Ts> class F >
 
 Similar to mp11's `mp_quote`, this thing wrap multiple types into a single one define in the template template. Be cautious that it only accept template that receive only types, no `bool` or `int` or whatever.
 `te::eval_pipe_< te::input_<int,float,char>, te::quote_<std::tuple> >` will result into `std::tuple<int,float,char>`
 This function have a sister function named `lift_<template<...> class F>` due to the std.type_trait library that need to quote then to get the nested `::type`. 
-___
+> Rule of thumb : use quote most of the time, use lift if you need to use std::type_traits meta-function
+
 
 > Ok I get that you can play with template template but other libraries can do it too.
 > However, somethings sound familiar here and I can't put my finger on it...
 
 It will be more visible when I introduce the whole mp11-like meta-expression and start to chain them.
 
-`template<int I> using int_c = std::integral_constant<int,I>;
-// too long to write obviously
+    template<int I> using int_c = std::integral_constant<int,I>;
+    // too long to write obviously
+    struct Local_Meta_Expr : te::pipe_< 
+                    te::transform_< te::multiply_< te::int_c<2> > >,
+                    te::transform_< te::mkseq, te::quote_std_integer_sequence >                
+                    >{};
+    static_assert(te::eval_pipe_< 
+                    te::input_<int_c<1>, int_c<2>>,
+                    Local_Meta_Expr ,
+                    te::is_<std::integer_sequence<0,1>, std::integer_sequence<0,1,2,3>> 
+                    >::value , "Compile");
+                    Ok that's a lot to digest but it show almost everything I want here :
 
-struct Local_Meta_Expr : te::pipe_< 
-                te::transform_< te::multiply_< te::int_c<2> > >,
-                te::transform_< te::mkseq, te::quote_std_integer_sequence >                
-                >{};
-static_assert(te::eval_pipe_< 
-                te::input_<int_c<1>, int_c<2>>,
-                Local_Meta_Expr ,
-                te::is_<std::integer_sequence<0,1>, std::integer_sequence<0,1,2,3>> 
-                >::value , "Compile");
-                `
-Ok that's a lot to digest but it show almost everything I want here :
 
 1. `pipe_` is being used here as a lazy view of any operation.
 2. `transform_` is more similar to `std::transform()` so I could rename it `te::foreach_`
