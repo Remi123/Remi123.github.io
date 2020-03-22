@@ -64,30 +64,25 @@ I know, I'm not there yet.
 
 ___
 
-What happen with this :
-`te::eval_pipe_< te::input_< float > , te::input_< int > >` 
-What is the resulting type here ? Hint : See the definition above
+With all those information, try to evaluate the resulting type (Click to see the answer) : 
 <details>
-<summary>Answer</summary>
+<summary>`te::eval_pipe_< te::input_< float > , te::input_< int > >`</summary>
 Each `te::input` ignore whatever it receive to use the types in it's template parameter instead.
 So the second `te::input` receive `float`, but use `int` instead. The answer is thus `int`
 </details>
-___
-
-`te::eval_pipe_< te::input_< float > , te::pipe_< te::input_< int > > >` 
-What is the resulting type here ?
 <details>
-<summary>Answer</summary>
+<summary>
+`te::eval_pipe_< te::input_< float > , te::pipe_< te::input_< int > > >` 
+</summary>
 Under evaluation, te::pipe is a meta-expression that pass the incoming inputs types to the meta-expression `Es...` and return their result. The answer is still `int`
 </details>
-___
-
-`te::eval_pipe_< te::input_< float > , te::pipe_< te::input_< int,float > > >` 
-What is the resulting type here ?
 <details>
-<summary>Answer</summary>
+<summary>
+`te::eval_pipe_< te::input_< float > , te::pipe_< te::input_< int,float > > >` 
+</summary>
 We need something to hold multiples types and C++ doesn't yet have a good synthactic sugar over that. We cannot return `int,float` by themselves, so we simply returns `te::input_< int,float>`.
 </details>
+
 ___
 
 > Interesting, albeit readability is still concerning. But still nothing new under the sun.
@@ -101,6 +96,7 @@ Let's introduce more advanced meta-expression :
 
 This simple meta-expression simply continue with what it receive. It serve more purpose than it may seems. `te::eval_pipe_< te::input_<int>, te::identity>` result in `int`.
 
+
 ### te::flatten
 
 This is a necessary evil in case of multiple nested inputs like this `te::eval_pipe_<te::input_< std::string, te::input_<int>, te::input_<float>, char >,te::flatten>`. It only remove the nested `te::input_`s to result into `te::input_<std::string, int, float, char>` 
@@ -113,7 +109,7 @@ This remove the template template parameter which is useful in many place. `te::
 
 ### te::quote_< template<typename ... Ts> class F >
 
-Similar to mp11's `mp_quote`, this thing wrap multiple types into a single one define in the template template. Be cautious that it only accept template that receive only types, no `bool` or `int` or whatever.
+Similar to mp11's `mp_quote`, this thing wrap multiple types into a single one defined in the template template parameter. Be cautious that it only accept template that receive only types, no `bool` or `int` or whatever.
 `te::eval_pipe_< te::input_<int,float,char>, te::quote_<std::tuple> >` will result into `std::tuple<int,float,char>`
 This function have a sister function named `lift_<template<...> class F>` due to the std.type_trait library that need to quote then to get the nested `::type`. 
 Rule of thumb : use quote most of the time, use lift if you need to use std::type_traits meta-function
@@ -151,6 +147,8 @@ Ok that's a lot to digest but it show almost everything I want here
 6. I'm manipulating multiple types at the same time very easily
 7. Local_Meta_Expr inherite all this behavior from `te::pipe_<...>`. It could have been a typedef or an alias template, but I wanted to show that it doesn't affect the behavior.
 8. This is the closest I can get to range-like syntax for manipulating types
+
+If you squeeze you're eye a little and replace some commas with the pipe operator | , you can see that it's very similar to the range syntax.
 
 > ... Ok now you have my attention. The functionnality can still be done with the other library but you have a better looking syntax.
 
@@ -213,7 +211,44 @@ I'm now able to implement some cool function like `te::swizzle<int ... I>`
 
 The last example actually modified a function using variadic pack expensions. This is one of the reason I wanted to start a library since others libraries made it too difficult to do such things.
 
-For now, I've already implemented two higher-higher-meta-expression using `te::fork_` , but I'm not surprise one bit. Odin Holmes actuallly did a presentation on this ( in Boost(not yet!).tmp, it's named `boost::tmp::tee_`) and fork was the first meta-expression that blew my mind. I remember my big meta-functions that wasn't working, replacing it by fork and three little dot and seeing it work perfectly on the first try.
+For now, I've already implemented two higher-meta-expression using `te::fork_` , but I'm not surprise one bit. Odin Holmes actuallly did a presentation on this ( in Boost(not yet!).tmp, it's named `boost::tmp::tee_`) and fork was the first meta-expression that blew my mind. I remember my big meta-functions that wasn't working, replacing it by fork and three little dot and seeing it work perfectly on the first try.
+
+The last higher-meta-expression I want to talk about is `te::on_args_<typename ... Es>`. This solve a weird problem in template library where you have something like a `std::tuple<Ts...>` and just want to play with the inner types, then rewrap with tuple. The problem is that it's technically a series of functions that depend on the input, which is notoriously difficult since you have add your continuation to the last meta-function which can be nested inside other meta-function. Not in my library, albeit I admit the implementation is a little bit frankenstein. However, this is my actual solution to Arthur O'Dwyer post about template library released in December 2019 : 
+
+```C++
+    // On this challenge, the goal was to unwrap, remove empty class, sort them by
+    // size and rewrap them. on_args_<Es...> deals with the unwrap rewrap if the
+    // signature of the type accept only types.
+    struct Z {};  // EMPTY CLASS
+    static_assert(
+      te::eval_pipe_<
+          te::input_<std::tuple<Z, int[4], Z, int[1], Z, int[2], int[3]>>,
+          te::on_args_<te::remove_if_<te::lift_<std::is_empty>>,
+                       te::sort_<te::transform_<te::size>, te::greater_<>>
+                       >,
+          te::is_<std::tuple<int[4], int[3], int[2], int[1]>>
+        >::value, "Arthur O'Dwyer");
+    // No unwrap, no as_lambda, no custom implementation. Simply on_args. 
+```
+
+Since we have abstracted the whole unwrap-wrap, might as well test this function with different types
+
+```C++
+    static_assert(
+      te::eval_pipe_<
+          te::input_<
+            std::tuple<Z, int[4], Z, int[1], Z, int[2], int[3]>,
+            te::ls_<int[2], Z, int[1], Z, int[3]>
+          >,
+          te::transform_<
+              te::on_args_<te::remove_if_<te::lift_<std::is_empty>>,
+                           te::sort_<te::transform_<te::size>, te::greater_<>>
+                            >
+                        >,
+          is_<std::tuple<int[4], int[3], int[2], int[1]>
+              ,te::ls_<int[3],int[2],int[1]>>
+        >::value, "Arthur O'Dwyer but with multiple types");   
+```
 
 
-
+```
