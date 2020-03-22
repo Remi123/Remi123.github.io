@@ -112,32 +112,37 @@ This remove the template template parameter which is useful in many place. `te::
 Similar to mp11's `mp_quote`, this thing wrap multiple types into a single one define in the template template. Be cautious that it only accept template that receive only types, no `bool` or `int` or whatever.
 `te::eval_pipe_< te::input_<int,float,char>, te::quote_<std::tuple> >` will result into `std::tuple<int,float,char>`
 This function have a sister function named `lift_<template<...> class F>` due to the std.type_trait library that need to quote then to get the nested `::type`. 
-> Rule of thumb : use quote most of the time, use lift if you need to use std::type_traits meta-function
+Rule of thumb : use quote most of the time, use lift if you need to use std::type_traits meta-function
 
 
 > Ok I get that you can play with template template but other libraries can do it too.
 > However, somethings sound familiar here and I can't put my finger on it...
 
 It will be more visible when I introduce the whole mp11-like meta-expression and start to chain them.
-
+```C++
     template<int I> using int_c = std::integral_constant<int,I>;
-    // too long to write obviously
-    struct Local_Meta_Expr : te::pipe_< 
-                    te::transform_< te::multiply_< te::int_c<2> > >,
-                    te::transform_< te::mkseq, te::quote_std_integer_sequence >                
-                    >{};
-    static_assert(te::eval_pipe_< 
-                    te::input_<int_c<1>, int_c<2>>,
-                    Local_Meta_Expr ,
-                    te::is_<std::integer_sequence<0,1>, std::integer_sequence<0,1,2,3>> 
-                    >::value , "Compile");
-                    Ok that's a lot to digest but it show almost everything I want here :
+
+    using Local_Meta_Expr = 
+        te::pipe_<
+                te::transform_< te::multiply_<te::int_c<2> > >,
+                te::transform_< te::mkseq, te::quote_std::integer_sequence >
+                >;
+
+    static_assert(
+        te::eval_pipe_<
+                        te::input_<int_c<1>, int_c<2>>,
+                        Local_Meta_Expr,
+                        te::is_<std::integer_sequence<0,1>, std::integer_sequence<0,1,2,3>> 
+        >, "Compile fine")
+```
+
+Ok that's a lot to digest but it show almost everything I want here 
 
 
 1. `pipe_` is being used here as a lazy view of any operation.
 2. `transform_` is more similar to `std::transform()` so I could rename it `te::foreach_`
 3. `mkseq` only accept `std::integral_constant<int,N> `(for the moment) and output `std::integral_constant` from 0 to N-1.
-4. `quote_std_integer_sequence` is unfortunate, but needed since the difference of signature (`quote_` only accept types and `std::integer_sequence` have the signature `template<typename T, T ... value>`)
+4. `quote_std_integer_sequence` is unfortunate, but needed since the difference of signature (`quote_` only accept types wrapper with signature `template<typename ... Ts>`  and `std::integer_sequence` have the signature `template<typename T, T ... value>`)
 5. `is_<typename ... Ts>` is very similar to `std::is_same` but checks if the types it receive is the same as `Ts...` 
 6. I'm manipulating multiple types at the same time very easily
 7. This is the closest I can get to range-like syntax for manipulating types
