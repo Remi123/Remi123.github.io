@@ -97,6 +97,10 @@ I know, this is the basic.
 Let's introduce more advanced meta-expression :
 
 
+### te::identity
+
+This simple meta-expression simply continue with what it receive. It serve more purpose than it may seems. `te::eval_pipe_< te::input_<int>, te::identity>` result in `int`.
+
 ### te::flatten
 
 This is a necessary evil in case of multiple nested inputs like this `te::eval_pipe_<te::input_< std::string, te::input_<int>, te::input_<float>, char >,te::flatten>`. It only remove the nested `te::input_`s to result into `te::input_<std::string, int, float, char>` 
@@ -122,11 +126,11 @@ It will be more visible when I introduce the whole mp11-like meta-expression and
 ```C++
     template<int I> using int_c = std::integral_constant<int,I>;
 
-    using Local_Meta_Expr = 
+    struct Local_Meta_Expr : 
         te::pipe_<
                 te::transform_< te::multiply_<te::int_c<2> > >,
                 te::transform_< te::mkseq, te::quote_std::integer_sequence >
-                >;
+                >{};
 
     static_assert(
         te::eval_pipe_<
@@ -145,37 +149,71 @@ Ok that's a lot to digest but it show almost everything I want here
 4. `quote_std_integer_sequence` is unfortunate, but needed since the difference of signature (`quote_` only accept types wrapper with signature `template<typename ... Ts>`  and `std::integer_sequence` have the signature `template<typename T, T ... value>`)
 5. `is_<typename ... Ts>` is very similar to `std::is_same` but checks if the types it receive is the same as `Ts...` 
 6. I'm manipulating multiple types at the same time very easily
-7. This is the closest I can get to range-like syntax for manipulating types
-8. Local_Meta_Expr inherite all this behavior from pipe. It could have been a typedef or an alias template, but I wanted to show that it doesn't affect the behavior.
+7. Local_Meta_Expr inherite all this behavior from `te::pipe_<...>`. It could have been a typedef or an alias template, but I wanted to show that it doesn't affect the behavior.
+8. This is the closest I can get to range-like syntax for manipulating types
 
 > ... Ok now you have my attention. The functionnality can still be done with the other library but you have a better looking syntax.
+
 Ok now let's open Pandora's box.
 
 > ... What do you mean?
-Let's create meta-expression out of other meta-expressions. Let's use `te::quote_< te::pipe_ >`.
-This would wrap the current inputs with `te::pipe_`, and if the types are themselves meta-expressions, this create a new meta-expressions.
+
+Let's create meta-expression out of other meta-expressions. Since most of my meta-expression are respecting the template signature of `template< typename ...>`, even `te::pipe_<typename ... Es>` , we can use `te::quote_<...>` inside `te::eval_pipe_<...>` to create new meta-expression.
 
 Let's show some of my favorites examples
 
-`template<int N>
-struct copy_ : te::eval_pipe_< te::input_<int_c<N>>,
-                                te::mkseq,
-                                te::transform_<te::input_<te::identity>>, 
-                                te::quote_<te::fork_>>
-                                {}; // all of this eval to fork_<identity,identity,..., N> `
+```C++
+    template<int N>
+    struct copy_ : te::eval_pipe_< te::input_<int_c<N>>,
+                                    te::mkseq,
+                                    te::transform_<te::input_<te::identity>>, 
+                                    te::quote_<te::fork_>>
+                                    {}; // all of this eval to fork_<identity,identity,... > with N-time identity
+                                    // copy_<int I> inherit from te::fork_<te::identity,...>
+```
 
 `te::fork_<typename ... Es>` is the opposite of `te::transform_`. It copies the inputs received to all meta-expression `Es...` which is exactly what we wanted to do in this case.
 
+Technically, what we are doing here is modifying a function to be written as another one.
+
 If this is not mind-blowing enough, let's me introduce you `te::repeat_`
 
-`template <std::size_t N, typename... Es>
-struct repeat_ : eval_pipe_<input_<Es...>, copy_<N>, flatten, quote_<pipe_>> {};
+```C++
+    template <std::size_t N, typename... Es>
+    struct repeat_ : te::eval_pipe_<te::input_<Es...>, 
+                                te::copy_<N>, 
+                                te::flatten, 
+                                te::quote_<te::pipe_>> {};
 
-static_assert(
-    eval_pipe_<input_<int>,
-               repeat_<2, lift_<std::add_pointer>, lift_<std::add_const>>,
-               is_<int *const *const>>::value,
-    "");`
-    
+    static_assert(
+        eval_pipe_<te::input_<int>,
+                   te::repeat_< 2, te::lift_<std::add_pointer>, te::lift_<std::add_const>>,
+                   te::is_<int *const *const>>::value,
+        "");
+```
+
+`te::repeat_` is the first meta-expression that I can confidently say that no other library goes as far. I'm not saying it's impossible to implement, but they will fight their own interface due to the nesting of their meta-functions.
+If you are familiar with kvasir.mpl documentations, there is a little meta-function named ``kvasir::mpl::call_f ``with the comment literally saying "/ \brief experimental, may be depricated or changed". This is because it consider it's input as meta-function.  My library is basically an experiment of using this function all over the place.
+
+> The problem is not that I've tried making it work, the problem is that I;ve succeeded
+
+I'm now able to implement some cool function like `te::swizzle<int ... I>`
+
+```C++
+    template<int ... I>
+    struct swizzle : te::fork_<te::get_<I>...>{};
+
+    static_assert(
+    te::eval_pipe_<
+            te::input_<int, int *, int **, int ***>, 
+            te::swizzle_<2, 1, 0, 3, 1>,                    // Get by index
+            te::is_<int **, int *, int, int ***, int *>
+    >::value, " Swizzling is easy");
+```
+
+The last example actually modified a function using variadic pack expensions. This is one of the reason I wanted to start a library since others libraries made it too difficult to do such things.
+
+For now, I've already implemented two higher-higher-meta-expression using `te::fork_` , but I'm not surprise one bit. Odin Holmes actuallly did a presentation on this ( in Boost(not yet!).tmp, it's named `boost::tmp::tee_`) and fork was the first meta-expression that blew my mind. I remember my big meta-functions that wasn't working, replacing it by fork and three little dot and seeing it work perfectly on the first try.
+
 
 
