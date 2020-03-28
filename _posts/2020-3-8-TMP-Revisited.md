@@ -3,7 +3,7 @@ layout: post
 title: Template Meta-Programming Revisited 
 ---
 
-# TMP for fun, power, madness and vice versa
+# Range-ifying TMP for fun, power, madness and vice versa
 
 ## Around summer 2019
 I've been experimenting with Tmp lately to understand this arcane part of our favorite language. 
@@ -13,7 +13,7 @@ Fast-forward a couple of months of development and I was able to implement mysel
 One problem in particular (the equivalent of std::unique in TMP) was giving me trouble. I tried to implement a particular function to help me with this and to my complete surprise was actually working, but found out that kvasir.mpl's INTERFACE ( not the implementation) wasn't supporting this functionality. 
 
 ## November 2019
-I wanted to experiment with this newly found discovery and see where it lead to. If it didn't found something worthwhile, I wouldn't be writing a blog about it. 
+I wanted to experiment with this newly found discovery and see where it lead to. After a lot of trial and compiler error novel, I was able to reproduce most of the other type-based meta-programmaing libraries's functionalities. I was also able to create something new that require some explanation but if it didn't found something worthwhile, I wouldn't be writing a blog about it.
 
 ## Now let me be clear about some things before I continue.
 1. If you want to learn TMP : Learn kvasir.mpl or boost.mp11 or boost.hana first. 
@@ -30,6 +30,7 @@ The goal of every type-based meta-programming library is to start from a type T 
 Every meta-expression in the namespace _type_expr_ respect the following concept which this is an exemplar :
 ```C++
     namespace te = type_expr;
+    template<typename ... Es>
     struct te::exemplar
     {
         template<typename ... Ts>
@@ -37,6 +38,7 @@ Every meta-expression in the namespace _type_expr_ respect the following concept
     };
 ```
 The exemplar type can also be templated. f is a variadic subtype that is supposed to receive all incoming inputs types.
+For the purpose of this blog, `typename te::examplar<Es...>::template f<Ts ...>::type` represent an whole expression where Ts is the input types and Es represent other expressions. The whole goal of the rest of the library is to make this a whole lot easier to write, read and reason about.
 
 There is a couple of fundamentals types that you need to know to better understand my library _type_expr_
 
@@ -48,7 +50,7 @@ Almost all my other meta-expression returns some forms of `te::input_<result_t..
 This is the lazy version of the meta-expression magic types. It's only a holder for meta-expression like `te::input_<...>`. The only other type that pipe is allowed to know is `te::input_<...>` to do some syntactic sugar. It's also a meta-expression that apply Es... to every types it receives through the subtype f.
 
 ### using te::eval_pipe< typename ... Es > = typename te::pipe_< Es... >::template f<>::type;
-This is the actual implementation of my evaluation. It's similar to `te::pipe_t` but I didn't want to have such a big difference in behavior under one additional character. This is where all the magic happen. Using those three types, we can do some simple stuff.
+This is the actual implementation of the evaluation. It's similar to `te::pipe_t` but I didn't want to have such a big difference in behavior under one additional character. This is where all the magic happen. Using those three types, we can do some simple stuff.
 
 ```C++
     static_assert(
@@ -82,7 +84,6 @@ Under evaluation, te::pipe is a meta-expression that pass the incoming inputs ty
 </summary>
 We need something to hold multiples types and C++ doesn't yet have a good syntactic sugar over that. We cannot return `int,float` by themselves, so we simply returns `te::input_< int,float>`.
 </details>
-
 ___
 
 > Interesting, albeit readability is still concerning. But still nothing new under the sun.
@@ -94,7 +95,9 @@ Let's introduce more advanced meta-expression :
 
 ### te::identity
 
-This simple meta-expression simply continue with what it receive. It serve more purpose than it may seems. `te::eval_pipe_< te::input_<int>, te::identity>` result in `int`.
+This simple meta-expression simply continue with what it receive. It serve more purpose than it may seems. 
+
+`te::eval_pipe_< te::input_<int>, te::identity>` result in `int`.
 
 
 ### te::flatten
@@ -150,6 +153,38 @@ Ok that's a lot to digest but it show almost everything I want here
 
 If you squeeze you're eye a little and replace some commas with the pipe operator | , you can see that it's very similar to the range syntax.
 
+I would even go as far the the most different synthax between the two libraries is that I wrap the functions in  std::range::view namespace in my template template `te::pipe_`. 
+
+```C++
+    // range library to double each int values in a container and calculate the summation 
+    auto range_operation =
+            std::range::view::transform([](int& i){ return i * 2;}) 
+        |   std::range::view::accumulate(0); // TODO: change to something with plus<>()
+    auto result_value = std::vector<int>{1,2,3} | range_operation; 
+        // result in int{12};
+
+    // type_expr library to do the same thing with std::integral_constant types
+    template <int N> using int_c = std::integral_constant<int,N>;
+    
+    using type_expression = 
+        te::pipe_<
+                te::transform_<te::multiply_<int_c<2>>>
+            ,   te::fold_left_<te::plus_<>>   
+        >; 
+    using result_type = te::eval_pipe_<
+                                te::input_<int_c<1>,int_c<2>,int_c<3>>, type_expression
+                                >; 
+        // result in std::integer_constant<int,12>;
+```
+
+This is really the closest I can get to the range library. I really want to express that I need to express 
+
+```C++
+    auto with_range = functionA | functionB | functionC;
+    // into
+    using with_type = te::pipe_<tmp_functionA, tmp_functionB, tmp_functionC>;
+```
+
 > ... Now you have my attention. The functionality can still be done with the other library but you have a better looking syntax.
 
 Ok now let's open Pandora's box.
@@ -169,6 +204,7 @@ Let's show some of my favorites examples
                                     {}; 
     // all of this eval to fork_<identity,identity,... > with N-time identity
     // copy_<int I> inherit from te::fork_<te::identity,...>
+    // te::eval_pipe_<te::input_<int>, copy_<5>> result into te::input_<int,int,int,int,int>
 ```
 
 `te::fork_<typename ... Es>` is the opposite of `te::transform_`. It copies the inputs received to all meta-expression `Es...` which is exactly what we wanted to do in this case.
@@ -187,13 +223,11 @@ If this is not mind-blowing enough, let's me introduce you `te::repeat_`
     static_assert(
         eval_pipe_<te::input_<int>,
                    te::repeat_< 2, te::lift_<std::add_pointer>, te::lift_<std::add_const>>,
-                   te::is_<int *const *const>>::value,
-        "");
+                   te::is_<int *const *const>>::value, 
+                "The result is int * const int * const");
 ```
 
 If you are familiar with kvasir.mpl documentations, there is a little meta-function named ``kvasir::mpl::call_f ``with the comment literally saying "/ \brief experimental, may be deprecated or changed". This is because it consider it's input as meta-function.  My library is basically an experiment of using this function all over the place.
-
-> The problem is not that I've tried making it work, the problem is that I've succeeded
 
 I'm now able to implement some cool function like `te::swizzle<int ... I>`
 
@@ -209,11 +243,11 @@ I'm now able to implement some cool function like `te::swizzle<int ... I>`
     >::value, " Swizzling is easy");
 ```
 
-The last example actually modified a function using variadic pack expansions. This is one of the reason I wanted to start a library since others libraries made it too difficult to do such things.
+The last example actually modified a function using variadic pack expansions. This is one of the reason I wanted to start a library since others libraries made it too difficult to do such things due to the nesting of their meta-functions.
 
-For now, I've already implemented two higher-meta-expression using `te::fork_` , but I'm not surprised one bit. Odin Holmes actually did a presentation on this ( in Boost(not yet!).tmp, it's named `boost::tmp::tee_`) and fork was the first meta-expression that blew my mind. I remember my big meta-functions that wasn't working, replacing it by fork and three little dot and seeing it work perfectly on the first try.
+For now, I've already implemented two higher-meta-expression using `te::fork_` , but I'm not surprised one bit. Odin Holmes did a presentation on this ( in Boost(not yet!).tmp, it's named `boost::tmp::tee_`) and fork was the first meta-expression that blew my mind. I remember my big meta-functions that wasn't working, replacing it by fork and three little dot and seeing it work perfectly on the first try. I was flabergasted the whole day.
 
-The last higher-meta-expression I want to talk about is `te::on_args_<typename ... Es>`. This solve a weird problem in template library where you have something like a `std::tuple<Ts...>` and just want to play with the inner types, then rewrap with tuple. The problem is that it's technically a series of functions that depend on the input, which is notoriously difficult since you have add your continuation to the last meta-function which can be nested inside other meta-function. Not in my library, albeit I admit the implementation is a little bit Frankenstein. However, this is my actual solution to Arthur O'Dwyer post about template library released in December 2019 : 
+The last higher-meta-expression I want to talk about is `te::on_args_<typename ... Es>`. This solve a weird problem in template library where you have something like a `std::tuple<Ts...>` and just want to play with the inner types, then rewrap with tuple. The problem is that it's technically a series of functions that depend on the input, which is notoriously difficult since you have to add your continuation to the last meta-function which can be nested inside other meta-function. Not in my library, albeit I admit the implementation is a little bit Frankenstein. However, this is my actual solution to Arthur O'Dwyer post about template library released in December 2019 : 
 
 ```C++
     // On this challenge, the goal was to unwrap, remove empty class, sort them by
@@ -238,14 +272,14 @@ Since we have abstracted the whole unwrap-wrap, might as well test this function
       te::eval_pipe_<
           te::input_<
             std::tuple<Z, int[4], Z, int[1], Z, int[2], int[3]>,
-            te::ls_<int[2], Z, int[1], Z, int[3]>
+            te::ls_<int[2], Z, int[1], Z, int[3]> // just a type_list named ls_
           >,
           te::transform_<
               te::on_args_<te::remove_if_<te::lift_<std::is_empty>>,
                            te::sort_<te::transform_<te::size>, te::greater_<>>
                             >
                         >,
-          is_<std::tuple<int[4], int[3], int[2], int[1]>
+          te::is_<std::tuple<int[4], int[3], int[2], int[1]>
               ,te::ls_<int[3],int[2],int[1]>>
         >::value, "Arthur O'Dwyer but with multiple types");   
 ```
@@ -255,9 +289,11 @@ Since we have abstracted the whole unwrap-wrap, might as well test this function
 Well, I have this feature that is not present on every functions since I've recently implemented it, but I actually do some sort of error management. However, it's a little bit ... unconventional.
 
 Let's say you want to unwrap an `int`, which is not possible since `int ` is not a template template.
-`te::eval_pipe_<te::input_<int>, te::unwrap> test_error = int{}`. Without any error management, you would have a huge compiler message with nested error reporting. I was as tired of seeing this as you do. What I did was, since a lot of my code is centralized into what I call a context, if I know an error is produced in this context, I can just create a type named `te::error_<>` and put whatever message I wanted inside in the form of a type.
+`te::eval_pipe_<te::input_<int>, te::unwrap> test_error = int{}`.
 
-In the case of unwrapping an `int`, I return something like `error_<te::unwrap,te::unspecialized, int>` because I don't have a specialization for unwrapping an int. The _very_ cool thing is that further evaluation of meta-expression will do _nothing_ once it saw that an `te::error_<>` has been evaluated. It's not perfect, if you have multiple types and one of them is an error type, then there is some possibility that I can continue with that, but it's a cool feature.
+Without any error management, you would have a huge compiler message with nested error reporting. I was as tired of seeing this as you do. What I did was, since a lot of my code is centralized into what I call a context, if I know an error is produced in this context, I can just create a type named `te::error_<>` and put whatever message I want inside in the form of a type.
+
+In the case of unwrapping an `int`, I return something like `error_<te::unwrap,te::unspecialized, int>` because I don't have a specialization for unwrapping an int. The _very_ cool thing is that further evaluation of meta-expression will do _nothing_ once it saw that an `te::error_<>` has been evaluated. You then receive a type `error_` with some custom message explaning what is the problem. It's not perfect, if you have multiple types and one of them is an error type, then there is some possibility that I can continue with that, but it's a cool feature.
 
 Albeit weird, this system allow me to greatly reduce the compiler log size, which is my goal in 99% of the case. Not all function support it yet since it's fairly new.
 
@@ -276,4 +312,6 @@ Let's say you have` te::sort_<transform_<te::size>, greater_<>>`. The sort meta-
 ## What's Next
 
 I'm very satisfied with this library. In truth, I don't feel it's ready for production since there is some inconsistencies in the meta-expressions calling, but nothing that can't be fix with a decent naming scheme. For performance concerns, most of the implementation is very similar to kvasir.mpl, which has the best compile-time performance. There is some algorithms where I simply cannot see a improvement. 
-Those problems aside, I must take a break at developing this library for about 2 months since I need to learn some other library and I'm moving into my first houses soon. Finishing this blog was somewhat of a stretch and I didn't have the time to spellcheck it. 
+I do however feel like I want to improve how I'm doing the implementation in case of if statement.
+
+Those problems aside, I must take a break at developing this library for some months since I need to learn some other library and I'm moving into my first houses soon. Finishing this blog was somewhat of a stretch. 
