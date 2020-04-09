@@ -133,9 +133,9 @@ Ok that's a lot to digest but it show almost everything I want here
 7. Local_Meta_Expr inherit all this behavior from `te::pipe_<...>`. It could have been a typedef or an alias template, but I wanted to show that it doesn't affect the behavior.
 8. This is the closest I can get to range-like syntax for manipulating types
 
-If you squeeze you're eye a little and replace some commas with the pipe operator | , you can see that it's very similar to the range syntax.
+If you squeeze you're eye a little and replace some commas with the pipe operator `|` , you can see that it's very similar to the range syntax.
 
-I would even go as far the the most different synthax between the two libraries is that I wrap the functions in  std::range::view namespace in my template template `te::pipe_`. 
+### Let's show a comparaison
 
 ```C++
     // range library to double each int values in a container and calculate the summation 
@@ -143,11 +143,8 @@ I would even go as far the the most different synthax between the two libraries 
 	int accumulator = 0;
 	auto fct_actions =
 		ranges::actions::transform([](int& i){ return i*=2;} )
-	|	ranges::actions::transform(
-						[&accumulator]
-						(const int& i)
-						{accumulator += i;
-						 return i;});
+	|	ranges::actions::transform( [&accumulator](const int& i)
+						{accumulator += i; return i;});
 
 	std::vector<int> vi{1,2,3};
 	vi |= fct_actions;
@@ -168,7 +165,7 @@ I would even go as far the the most different synthax between the two libraries 
 	static_assert( std::is_same_v<int_c<12>, result_type>,"");
 ```
 
-This is really the closest I can get to the range library. I took some liberties with the range_v3 library since there is certainly a better way to double each values in a vector and do the summation.
+This is really the closest I can get to the range library. I took some liberties since there is certainly a better way to double each values in a vector and do the summation.
 
 I mostly wanted to show that each meta-expression inside `eval_pipe_` is considered something akin to an `actions` in range_v3. Any `views` ( the other "concept" in range_v3 ) requiere iteration to make it work : `for(auto anything : vi | fct_views)`. 
 
