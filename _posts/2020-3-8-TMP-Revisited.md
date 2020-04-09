@@ -169,7 +169,7 @@ This is really the closest I can get to the range library. I took some liberties
 
 I mostly wanted to show that each meta-expression inside `eval_pipe_` is considered something akin to an `actions` in range_v3. Any `views` ( the other "concept" in range_v3 ) requiere iteration to make it work : `for(auto anything : vi | fct_views)`. 
 
-While very cool, some operations are still difficult to express in meta-programming and, up until now, all of this was a by-product of what I wanted to achieve.
+While very cool, some operations are still difficult to express in meta-programming and, up until now, all of this was a by-product of what I wanted to achieve. Let me be clear : I did not "TMP all the things" the range library. It's very similar due to some similar ideas and concepts, but nothing more.
 
 
 # Let's open Pandora's box.
