@@ -9,36 +9,23 @@ title: Template Meta-Programming Revisited
 I've been experimenting with Tmp lately to understand this arcane part of our favorite language. 
 I quickly settle for using kvasir.mpl since it had the best performance according to metaben.ch but the documentation was somewhat difficult to understand (at first !) but the vision and the continuation-style was really addicting.
 
-Fast-forward a couple of months of development and I was able to implement myself some functions using the guts of the library.
 One problem in particular (the equivalent of std::unique in TMP) was giving me trouble. I tried to implement a particular function to help me with this and to my complete surprise was actually working, but found out that kvasir.mpl's INTERFACE ( not the implementation) wasn't supporting this functionality. 
 
-## November 2019
-I wanted to experiment with this newly found discovery and see where it lead to. After a lot of trial and compiler error novel, I was able to reproduce most of the other type-based meta-programmaing libraries's functionalities. I was also able to create something new that require some explanation but if it didn't found something worthwhile, I wouldn't be writing a blog about it.
+Obviously I wanted to expand this idea further and create (yet another) meta-programming library.
+
+After a lot of trial and compiler error novel, I was able to reproduce most of the other type-based meta-programmaing libraries's functionalities. I was also able to create something new that require some explanation but if it didn't found something worthwhile, I wouldn't be writing a blog about it.
 
 ## Now let me be clear about some things before I continue.
 1. If you want to learn TMP : Learn kvasir.mpl or boost.mp11 or boost.hana first. 
 2. The library I wrote isn't ready for production yet : There is some inconsistencies in the interface and the implementation linearize some functions up to 8 times, while kvasir.mpl goes up to 256 in some cases.
 3. Since everything here is experimental, treat this as some back-alley deals that someone (me) is trying to get you into. 
-4. My goal is simply to throw things at the committee and say "Hey this work". 
+4. You can considerer this library a fork of kvasir.mpl since I use a lot of the same technique internaly to make it fast. I also do my fair share of forbidden magic.
+5. My goal is simply to throw things at the committee and say "Hey this work". 
 
 # Let's start
 [Link To the Library](https://github.com/Remi123/type_expr)
 
 The goal of every type-based meta-programming library is to start from a type T and get another type U.
-
-### Meta-Expressions ( typename ... Es)
-Every meta-expression in the namespace _type_expr_ respect the following concept which this is an exemplar :
-```C++
-    namespace te = type_expr;
-    template<typename ... Es>
-    struct te::exemplar
-    {
-        template<typename ... Ts>
-        struct f { using type = /*Implementation*/};
-    };
-```
-The exemplar type can also be templated. f is a variadic subtype that is supposed to receive all incoming inputs types.
-For the purpose of this blog, `typename te::examplar<Es...>::template f<Ts ...>::type` represent an whole expression where Ts is the input types and Es represent other expressions. The whole goal of the rest of the library is to make this a whole lot easier to write, read and reason about.
 
 There is a couple of fundamentals types that you need to know to better understand my library _type_expr_
 
@@ -60,9 +47,7 @@ This is the actual implementation of the evaluation. It's similar to `te::pipe_t
     ,"eval to true if it's the same as int");
 ```
 
-> This is cool but boring and other libraries can do the same things easily.
-
-I know, I'm not there yet.
+This is very basic and every other libraries can do a variation of std::is_same. But more interesting thing will be demonstratedlater in this post.
 
 ___
 
@@ -76,7 +61,7 @@ So the second `te::input` receive `float`, but use `int` instead. The answer is 
 <summary>
 `te::eval_pipe_< te::input_< float > , te::pipe_< te::input_< int > > >` 
 </summary>
-Under evaluation, te::pipe is a meta-expression that pass the incoming inputs types to the meta-expression `Es...` and return their result. The answer is still `int`
+Under evaluation, te::pipe is a meta-expression that pass the incoming inputs types to the meta-expression `Es...` and return their result. The answer is still `int`. This is a little bit strange but it's extremely important that `te::pipe_`, under evaluation, work exactly as if I didn't write it.
 </details>
 <details>
 <summary>
@@ -86,11 +71,9 @@ We need something to hold multiples types and C++ doesn't yet have a good syntac
 </details>
 ___
 
-> Interesting, albeit readability is still concerning. But still nothing new under the sun.
+It's still basic, but for me those kind of basic stuffs must work. 
 
-I know, this is the basic.
-
-Let's introduce more advanced meta-expression :
+Let's introduce more advanced meta-expression.
 
 
 ### te::identity
@@ -118,9 +101,8 @@ This function have a sister function named `lift_<template<...> class F>` due to
 Rule of thumb : use quote most of the time, use lift if you need to use std::type_traits meta-function
 
 
-> I get that you can play with template template but other libraries can do it too.
-> However, somethings sound familiar here and I can't put my finger on it...
-
+## Range-ifying type manipulation 
+Let's start chaining meta-expression like we can chain functions in the Std.Range library.
 It will be more visible when I introduce the whole mp11-like meta-expression and start to chain them.
 ```C++
     template<int I> using int_c = std::integral_constant<int,I>;
@@ -147,7 +129,7 @@ Ok that's a lot to digest but it show almost everything I want here
 3. `mkseq` only accept `std::integral_constant<int,N> `(for the moment) and output `std::integral_constant` from 0 to N-1.
 4. `quote_std_integer_sequence` is unfortunate, but needed since the difference of signature (`quote_` only accept types wrapper with signature `template<typename ... Ts>`  and `std::integer_sequence` have the signature `template<typename T, T ... value>`)
 5. `is_<typename ... Ts>` is very similar to `std::is_same` but checks if the types it receive is the same as `Ts...` 
-6. I'm manipulating multiple types at the same time very easily
+6. I'm manipulating multiple types at the same time very easily.
 7. Local_Meta_Expr inherit all this behavior from `te::pipe_<...>`. It could have been a typedef or an alias template, but I wanted to show that it doesn't affect the behavior.
 8. This is the closest I can get to range-like syntax for manipulating types
 
@@ -157,13 +139,21 @@ I would even go as far the the most different synthax between the two libraries 
 
 ```C++
     // range library to double each int values in a container and calculate the summation 
-    auto range_operation =
-            std::range::view::transform([](int& i){ return i * 2;}) 
-        |   std::range::view::accumulate(0); // TODO: change to something with plus<>()
-    auto result_value = std::vector<int>{1,2,3} | range_operation; 
-        // result in int{12};
+    
+	int accumulator = 0;
+	auto fct_actions =
+		ranges::actions::transform([](int& i){ return i*=2;} )
+	|	ranges::actions::transform(
+						[&accumulator]
+						(const int& i)
+						{accumulator += i;
+						 return i;});
 
-    // type_expr library to do the same thing with std::integral_constant types
+	std::vector<int> vi{1,2,3};
+	vi |= fct_actions;
+	assert(accumulator == 12);
+
+	// type_expr library to do the same thing with std::integral_constant types
     template <int N> using int_c = std::integral_constant<int,N>;
     
     using type_expression = 
@@ -172,28 +162,27 @@ I would even go as far the the most different synthax between the two libraries 
             ,   te::fold_left_<te::plus_<>>   
         >; 
     using result_type = te::eval_pipe_<
-                                te::input_<int_c<1>,int_c<2>,int_c<3>>, type_expression
+                                te::input_<int_c<1>,int_c<2>,int_c<3>>, 
+                                type_expression
                                 >; 
-        // result in std::integer_constant<int,12>;
+	static_assert( std::is_same_v<int_c<12>, result_type>,"");
 ```
 
-This is really the closest I can get to the range library. I really want to express that I need to express 
+This is really the closest I can get to the range library. I took some liberties with the range_v3 library since there is certainly a better way to double each values in a vector and do the summation.
 
-```C++
-    auto with_range = functionA | functionB | functionC;
-    // into
-    using with_type = te::pipe_<tmp_functionA, tmp_functionB, tmp_functionC>;
-```
+I mostly wanted to show that each meta-expression inside `eval_pipe_` is considered something akin to an `actions` in range_v3. Any `views` ( the other "concept" in range_v3 ) requiere iteration to make it work : `for(auto anything : vi | fct_views)`. 
 
-> ... Now you have my attention. The functionality can still be done with the other library but you have a better looking syntax.
+While very cool, some operations are still difficult to express in meta-programming and, up until now, all of this was a by-product of what I wanted to achieve.
 
-Ok now let's open Pandora's box.
 
-> ... What do you mean?
+# Let's open Pandora's box.
 
 Let's create meta-expression out of other meta-expressions. Since most of my meta-expression are respecting the template signature of `template< typename ...>`, even `te::pipe_<typename ... Es>` , we can use `te::quote_<...>` inside `te::eval_pipe_<...>` to create new meta-expression.
 
-Let's show some of my favorites examples
+Let's show some of my favorites examples, but before let me introduce `fork_`.
+
+`te::fork_<typename ... Es>` is the opposite of `te::transform_`. It copies the inputs received to all meta-expression `Es...` which is exactly what we wanted to do in this case. Odin Holmes did a presentation available on Youtube on this, but it's named `tee` in his cases. In kvasir.mpl, it's named `fork<typename ... Fs,(implicit last type is the continuation)>`
+
 
 ```C++
     template<int N>
@@ -202,16 +191,13 @@ Let's show some of my favorites examples
                                     te::transform_<te::input_<te::identity>>, 
                                     te::quote_<te::fork_>>
                                     {}; 
-    // all of this eval to fork_<identity,identity,... > with N-time identity
+    // all of this eval to fork_<identity,identity,... > with N-i1 time identity
     // copy_<int I> inherit from te::fork_<te::identity,...>
     // te::eval_pipe_<te::input_<int>, copy_<5>> result into te::input_<int,int,int,int,int>
 ```
-
-`te::fork_<typename ... Es>` is the opposite of `te::transform_`. It copies the inputs received to all meta-expression `Es...` which is exactly what we wanted to do in this case.
-
 Technically, what we are doing here is modifying a function to be written as another one.
 
-If this is not mind-blowing enough, let's me introduce you `te::repeat_`
+If this is not mind-blowing enough, let's me introduce you `te::repeat_<int N,typename ... Es>` which repeat the meta-expressions N time.
 
 ```C++
     template <std::size_t N, typename... Es>
@@ -265,7 +251,7 @@ The last higher-meta-expression I want to talk about is `te::on_args_<typename .
     // No unwrap, no as_lambda, no custom implementation. Simply on_args. 
 ```
 
-Since we have abstracted the whole unwrap-wrap, might as well test this function with different types
+Since we have abstracted the whole unwrap-wrap, might as well test this function with different types at the same time.
 
 ```C++
     static_assert(
@@ -284,12 +270,11 @@ Since we have abstracted the whole unwrap-wrap, might as well test this function
         >::value, "Arthur O'Dwyer but with multiple types");   
 ```
 
->That's amazing, do you have any other surprise.
 
-Well, I have this feature that is not present on every functions since I've recently implemented it, but I actually do some sort of error management. However, it's a little bit ... unconventional.
+Also, I have this feature that is not present on every functions since I've recently implemented it, but I actually do some sort of error management. However, it's a little bit ... unconventional.
 
 Let's say you want to unwrap an `int`, which is not possible since `int ` is not a template template.
-`te::eval_pipe_<te::input_<int>, te::unwrap> test_error = int{}`.
+`te::eval_pipe_<te::input_<int>, te::unwrap> test_error = ?`
 
 Without any error management, you would have a huge compiler message with nested error reporting. I was as tired of seeing this as you do. What I did was, since a lot of my code is centralized into what I call a context, if I know an error is produced in this context, I can just create a type named `te::error_<>` and put whatever message I want inside in the form of a type.
 
@@ -297,7 +282,6 @@ In the case of unwrapping an `int`, I return something like `error_<te::unwrap,t
 
 Albeit weird, this system allow me to greatly reduce the compiler log size, which is my goal in 99% of the case. Not all function support it yet since it's fairly new.
 
->Any other remarks ?
 
 Yes, actually I want to refine my definition of a meta-predicate.
 Some of my meta-expression require some expression that are either unary of binary predicate. Something like 
