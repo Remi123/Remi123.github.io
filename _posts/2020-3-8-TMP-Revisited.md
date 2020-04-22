@@ -62,11 +62,11 @@ After a lot of trial and compiler error novel, I was able to reproduce most of t
 
 ## C++20 Concept : Meta-Expression
 
-For those of you that want to know which Concept my library respect ( as of C++20 concept ), here is an examplar to demonstrate how they are constructed :
+For those of you that want to know which Concept my library respect ( as of C++20 concept ), here is an exemplar to demonstrate how they are constructed :
 
 ```C++
     template< typename ... MetaExpression >
-    struct examplar_
+    struct exemplar_
     {
         template < typename ... Types >
         struct f
@@ -82,7 +82,7 @@ This means that each meta-expressions contains another variadic struct named `f`
 
 Another simple example would be to add a pointer to a type. `typename te::add_pointer::template f<int>::type `would be `int*` for example. Not all meta-expression requires others meta-expressions as "functions inputs". 
 
-Obviously, my library tries to hide all ugly `typename `and `template` as much as possible. But this allows the meta-expressions to have two kinds of inputs : another meta-expression in the primary template, and "inputs" type in the subtype `f`. My choice to abstract all of this was to create two specials meta-expressions (`te::input_` and `te::pipe_`)and an type alias( `te::eval_pipe_`).
+Obviously, my library tries to hide all ugly `typename `and `template` as much as possible. But this allows the meta-expressions to have two kinds of inputs : another meta-expression in the primary template, and "inputs" type in the sub-type `f`. My choice to abstract all of this was to create two specials meta-expressions (`te::input_` and `te::pipe_`)and an type alias( `te::eval_pipe_`).
 
 
 ### te::input_< typename ... Ts >
@@ -90,10 +90,10 @@ Certainly the most important type. It's a meta-expression type-list that simply 
 Almost all my other meta-expression return some form of `te::input_<result_t...>`. An `te::input_<T>` with only one type will be replaced by T under evaluation.
 
 ### te::pipe_< typename ... Es >
-This is the lazy version of the meta-expression magic types. It's only a holder for meta-expression like `te::input_<...>`. The only other type that pipe is allowed to know is `te::input_<...>` to do some syntactic sugar. It's also a meta-expression that apply Es... to every type it receives through the subtype f.
+This is the lazy version of the meta-expression magic types. It's only a holder for meta-expression like `te::input_<...>`. The only other type that pipe is allowed to know is `te::input_<...>` to do some syntactic sugar. It's also a meta-expression that apply `Es...` to every type it receives through the sub-type f.
 
 ### using te::eval_pipe< typename ... Es > = typename te::pipe_< Es... >::template f<>::type;
-This is the actual implementation of the evaluation. It's similar to `te::pipe_t` but I didn't want to have such a big difference in behavior under one additional character. This is where all the magic happens. You can actually see that the subtype `f<>` starts with no types. This mean that most fo the meta-expressions will start with `te::input_<Ts...>` . Using those three types, we can do some simple stuff.
+This is the actual implementation of the evaluation. It's similar to `te::pipe_t` but I didn't want to have such a big difference in behavior under one additional character. This is where all the magic happens. You can actually see that the sub-type `f<>` starts with no types. This mean that most to the meta-expressions will start with `te::input_<Ts...>` . Using those three types, we can do some simple stuff.
 
 ```C++
     static_assert(
@@ -164,7 +164,7 @@ Rule of thumb : use quote most of the time, use lift if you need to use std::typ
 
 ### te::mkseq
 
-similar to `std::make_sequence`, it create an `te::input_<std::integral_constant<int,0>, ... std::integral_constant<int, N-1>> ` depending on the integral_constant of N it receive.
+Similar to `std::make_sequence`, it create an `te::input_<std::integral_constant<int,0>, ... std::integral_constant<int, N-1>> ` depending on the integral_constant of N it receive.
 
 
 ## Range-ifying type manipulation 
@@ -187,7 +187,7 @@ It will be more visible when I introduce the whole mp11-like meta-expression and
         >::value`, "Compile fine")
 ```
 
-Ok that's a lot to digest but it show almost everything I want here 
+OK that's a lot to digest but it show almost everything I want here 
 
 
 1. `pipe_` is being used here as a lazy view of any operation.
@@ -298,7 +298,7 @@ The last example actually modified a function using variadic pack expansions. Th
 
 For now, I've already implemented two higher-meta-expression using `te::fork_` , but I'm not surprised one bit. Fork was the first meta-expression that blew my mind. I remember my big meta-functions that wasn't working, replacing it by fork and three little dot and seeing it work perfectly on the first try. I was flabbergasted the whole day. 
 
-The last higher-meta-expression I want to talk about is `te::on_args_<typename ... Es>`. This solved a weird problem in template library where you have something like a `std::tuple<Ts...>` and just want to play with the inner types, then rewrap with tuple. 
+The last higher-meta-expression I want to talk about is `te::on_args_<typename ... Es>`. This solved a weird problem in template library where you have something like a `std::tuple<Ts...>` and just want to play with the inner types, then wrap with tuple. 
 
 The problem is that it's technically a series of functions that depend on the input, which is notoriously difficult since you need to add your continuation to the last meta-function which can be nested inside other meta-function. Not in my library, albeit I admit the implementation is a little bit Frankenstein. However, this is my actual solution to Arthur O'Dwyer post about template library released in December 2019 : 
 
@@ -339,14 +339,14 @@ Since we have abstracted the whole unwrap-wrap, might as well test this function
 ```
 
 
-Also, I have this feature that is not present on every function since I've recently implemented it, but I actually do some sort of error management. However, it's a little bit ... unconventional.
+Also, I have this feature that is not present on every function since I've recently implemented it, but I actually do some sort of error management. However, it's a little bit unconventional
 
 Let's say you want to unwrap an `int`, which is not possible since `int ` is not a template template.
 `te::eval_pipe_<te::input_<int>, te::unwrap> test_error = ?`
 
 Without any error management, you would have a huge compiler message with nested error reporting. I was as tired of seeing this as you do. What I did was, since a lot of my code is centralized into what I call a context, if I know an error is produced in this context, I can just create a type named `te::error_<>` and put whatever message I want inside in the form of a type.
 
-In the case of unwrapping an `int`, I return something like `error_<te::unwrap,te::unspecialized, int>` because I don't have a specialization for unwrapping an int. The _very_ cool thing is that further evaluation of meta-expressions will do _nothing_ once it saw that an `te::error_<>` has been evaluated. You then receive a type `error_` with some custom message explaning what is the problem. It's not perfect, if you have multiple types and one of them is an error type, then there is some possibility that I can continue with that, but it's a cool feature.
+In the case of unwrapping an `int`, I return something like `error_<te::unwrap,te::unspecialized, int>` because I don't have a specialization for unwrapping an int. The _very_ cool thing is that further evaluation of meta-expressions will do _nothing_ once it saw that an `te::error_<>` has been evaluated. You then receive a type `error_` with some custom message explaining what is the problem. It's not perfect, if you have multiple types and one of them is an error type, then there is some possibility that I can continue with that, but it's a cool feature.
 
 Albeit weird, this system allow me to greatly reduce the compiler log size, which is my goal in 99% of the case. Not all functions support it yet since it's fairly new.
 
