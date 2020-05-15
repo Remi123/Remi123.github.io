@@ -105,8 +105,8 @@ This is the actual implementation of the evaluation. It's similar to `te::pipe_t
     // Same thing but only using my library
     static_assert(
         te::eval_pipe_<te::input_<int,float>,
-                        te::is_<int,float>>::value,
-    "te::is_ is the equivalent of std::is_same");
+                        te::same_as_<int,float>>::value,
+    "te::same_as_ is similar to std::is_same, but check if the types receives are the same as the on in the template arguments.");
 ```
 
 This is very basic and every other library can do a variation of std::is_same. But more interesting thing will be demonstrated later in this post.
@@ -157,8 +157,9 @@ This remove the template template parameter which is useful in many place. `te::
 
 ### te::quote_< template<typename ... Ts> class F >
 
-Similar to mp11's `mp_quote`, this thing wraps multiple types into a single one defined in the template template parameter. Be cautious that it only accepts template that receive only types, no `bool` or `int` or whatever.
+Similar to mp11's `mp_quote`, this thing wraps multiple types into a single one defined in the template template parameter. Be cautious that it only accepts template that receive only types, no `bool` or `int` value.
 `te::eval_pipe_< te::input_<int,float,char>, te::quote_<std::tuple> >` will result into `std::tuple<int,float,char>`
+`te::eval_pipe_< te::input_<int>, te::quote_<std::vector>>` will result into `std::vector<int,std::allocator<int>> // std::vector have a default template parameter`
 This function have a sister function named `lift_<template<...> class F>` due to the std.type_trait library that need to quote then to get the nested `::type`. 
 Rule of thumb : use quote most of the time, use lift if you need to use std::type_traits meta-function
 
@@ -183,7 +184,7 @@ It will be more visible when I introduce the whole mp11-like meta-expression and
         te::eval_pipe_<
                         te::input_<int_c<1>, int_c<2>>,
                         Local_Meta_Expr,
-                        te::is_<std::integer_sequence<0,1>, std::integer_sequence<0,1,2,3>> 
+                        te::same_as_<std::integer_sequence<0,1>, std::integer_sequence<0,1,2,3>> 
         >::value`, "Compile fine")
 ```
 
@@ -191,7 +192,7 @@ Ok that's a lot to digest but it show almost everything I want here
 
 
 1. `pipe_` is being used here as a lazy view of any operation.
-2. `transform_` is more similar to `std::transform()` so I could rename it `te::foreach_`
+2. `transform_` is more similar to `std::transform()` 
 3. `mkseq` only accepts `std::integral_constant<int,N> `(for the moment) and output `std::integral_constant` from 0 to N-1.
 4. `quote_std_integer_sequence` is unfortunate, but needed since the difference of signature (`quote_` only accepts type wrappers with signature `template<typename ... Ts>`  and `std::integer_sequence` have the signature `template<typename T, T ... value>`). It get the `::value` of each types and put it in an `std::integer_sequence`.
 5. `is_<typename ... Ts>` is very similar to `std::is_same` but checks if the types it receives is the same as `Ts...` 
@@ -235,7 +236,7 @@ This is the example at the start of this blog :
 
 This is really the closest I can get to the range library. I took some liberties since there is certainly a better way to double each values in a vector and do the summation.
 
-I mostly wanted to show that each meta-expression inside `eval_pipe_` is considered something akin to an `actions` in range_v3. Any `views` ( the other "concept" in range_v3 ) is not really possible in type meta-programming since everything we interact with is a type, which is by definition very const. 
+I mostly wanted to show that each meta-expression inside `eval_pipe_` is considered something akin to an `actions` in range_v3. Any `views` ( the other "concept" in range_v3 ) is not really possible in type meta-programming since everything we interact with is a type, which is by definition very const and so cannot be iterated over, at least not in an imperative way. 
 
 While very cool, some operations are still difficult to express in meta-programming and, up until now, all of this was a by-product of what I wanted to achieve. Let me be clear : I did not "TMP all the things" in the range library. It's very similar due to some similar ideas and concepts, but nothing more.
 
@@ -246,7 +247,9 @@ Let's create meta-expression out of other meta-expressions. Since most of my met
 
 Let's show some of my favorites examples, but before let me introduce `fork_`.
 
-`te::fork_<typename ... Es>` is the opposite of `te::transform_`. It copies the inputs received to all meta-expressions `Es...` which is exactly what we wanted to do in this case. 
+`te::fork_<typename ... Es>` is the opposite of `te::transform_`. It copies the inputs received to each meta-expressions `Es`. so if we say `te::eval_pipe_<te::input_<i<1>>, fork_<plus_<i<2>, te::identity,te::input_<float>>>` , we end up with `te::input_<i<3>,i<1>,float>.` If you required multiple function in the same argument, you can wrap it into te::pipe_.
+
+Now that we understand fork, let's me introduce my implementation of copying types :
 
 
 ```C++
@@ -257,7 +260,7 @@ Let's show some of my favorites examples, but before let me introduce `fork_`.
                                     te::quote_<te::fork_>>
                                     {}; 
     // all of this eval to fork_<identity,identity,... > with N-1 time identity
-    // copy_<int I> inherit from te::fork_<te::identity,...>
+    // copy_<int 2> inherit from te::fork_<te::identity,te::identity>
     // te::eval_pipe_<te::input_<int>, copy_<5>> result into te::input_<int,int,int,int,int>
 ```
 Technically, what we are doing here is modifying a function to be written as another one.
@@ -274,7 +277,7 @@ If this is not mind-blowing enough, let's me introduce you `te::repeat_<int N,ty
     static_assert(
         eval_pipe_<te::input_<int>,
                    te::repeat_< 2, te::lift_<std::add_pointer>, te::lift_<std::add_const>>,
-                   te::is_<int *const *const>>::value, 
+                   te::same_as_<int *const *const>>::value, 
                 "The result is int * const * const");
 ```
 
@@ -290,7 +293,7 @@ I'm now able to implement some cool functions like `te::swizzle<int ... I>`
     te::eval_pipe_<
             te::input_<int, int *, int **, int ***>, 
             te::swizzle_<2, 1, 0, 3, 1>, // Get by index
-            te::is_<int **, int *, int, int ***, int *>
+            te::same_as_<int **, int *, int, int ***, int *>
     >::value, " Swizzling is easy");
 ```
 
@@ -308,7 +311,8 @@ The problem is that it's technically a series of functions that depend on the in
     // signature of the type accept only types.
     struct Z {};  // EMPTY CLASS
 
-    using MetaFct = te::on_args_<te::remove_if_<te::lift_<std::is_empty>>,
+    using MetaFct = te::on_args_<
+                       te::remove_if_<te::lift_<std::is_empty>>,
                        te::sort_<te::transform_<te::size>, te::greater_<>>
                        >;
 
@@ -316,7 +320,7 @@ The problem is that it's technically a series of functions that depend on the in
       te::eval_pipe_<
           te::input_<std::tuple<Z, int[4], Z, int[1], Z, int[2], int[3]>>,
                     MetaFct
-                    te::is_<std::tuple<int[4], int[3], int[2], int[1]>>
+                    te::same_as_<std::tuple<int[4], int[3], int[2], int[1]>>
         >::value, "Arthur O'Dwyer");
     // No unwrap, no as_lambda, no custom implementation. Simply on_args. 
 ```
@@ -331,7 +335,7 @@ Since we have abstracted the whole unwrap-wrap, might as well test this function
             te::ls_<int[2], Z, int[1], Z, int[3]> // just a type_list named ls_
           >,
           te::transform_< MetaFct  >, // The same MetaFct as previous example.
-          te::is_<
+          te::same_as_<
                 std::tuple<int[4], int[3], int[2], int[1]>
                 , te::ls_<int[3],int[2],int[1]>
               >
@@ -357,13 +361,14 @@ Some of my meta-expressions require some expression that are either unary of bin
     template<typename ... BinaryPredicate>
     struct sort_;
 ```
-This needs a little explaining, but a meta-expression binary-predicate can be multiple expressions that take 2 types and return either `std::integral_constant<bool,false>` or `std::integral_constant<bool,true>`. Nothing else. I'm not converting into them, nor anything else.
+This needs a little explaining, but a meta-expression binary-predicate can be multiple expressions that take 2 types and return either `std::integral_constant<bool,false>` or `std::integral_constant<bool,true>`. Nothing else. I'm not converting into them nor getting the value, albeit I'm starting to evaluate if I should.
+However, those three littles dot actually means that it's a series of function that end with either std::true_type or std::false_type. I take those BinaryPredicate, put it in another eval_pipe, look at the result and continue from there.
 
-Let's say you have` te::sort_<transform_<te::size>, greater_<>>`. The sort meta-expression will give two types at a time to the sub-meta-expressions. The `te::size` will transform 1 type into their size in `std::integral_constant<int,sizeof(T)>` and `te::greater_<>`, without argument, will look at those two types received and "return" either `true_type or false_type` depending if the first is greater than the second.
+For example, let's say you have` te::sort_<transform_<te::size>, greater_<>>`. The sort meta-expression will give two types at a time to the sub-meta-expressions. The `te::size` will transform 1 type into their size in `std::integral_constant<int,sizeof(T)>` and `te::greater_<>`, without argument, will look at those two integer_constant of their size and "return" either `true_type or false_type` depending if the first is greater than the second.
 
 ## What's Next
 
 I'm very satisfied with this library. In truth, I don't feel it's ready for production since there are some inconsistencies in the meta-expressions calling, but nothing that can't be fixed with a decent naming scheme. For performance concerns, most of the implementation is very similar to kvasir.mpl, which has the best compile-time performance. There is some algorithms where I simply cannot see an improvement. 
 I do however feel like I want to improve how I'm doing the implementation in case of if statement.
 
-Those problems aside, I must take a break at developing this library for some months since I need to learn some other library and I'm moving into my first house soon. Finishing this blog was somewhat of a stretch. 
+
