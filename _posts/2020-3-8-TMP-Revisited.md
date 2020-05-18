@@ -20,6 +20,8 @@ Before you start to read an heavy template meta-programming article, I'll get yo
 	vi |= fct_actions;
 	assert(accumulator == 12);
 
+    //-------------------------------------------------------------------------
+
 	// type_expr library to do the same thing with std::integral_constant types
     template <int N> using int_c = std::integral_constant<int,N>;
     
@@ -46,7 +48,7 @@ One problem in particular (the equivalent of std::unique in TMP) was giving me t
 
 Obviously I wanted to expand this idea further and create (yet another) meta-programming library.
 
-After a lot of trial and compiler error novel, I was able to reproduce most of the other type-based meta-programming library's functionalities. I was also able to create something new that require some explanation but if it didn't found something worthwhile, I wouldn't be writing a blog about it.
+After a lot of trial and compiler error novel, I was able to reproduce most of the other type-based meta-programming library's functionalities. I was also able to create something new that require some explanation but if it wasn't something worthwhile, I wouldn't be writing a blog about it.
 
 ## Let's start
 [Link To the Library](https://github.com/Remi123/type_expr)
@@ -62,11 +64,18 @@ After a lot of trial and compiler error novel, I was able to reproduce most of t
 
 ## C++20 Concept : Meta-Expression
 
-For those of you that want to know which Concept my library respect ( as of C++20 concept ), here is an exemplar to demonstrate how they are constructed :
+For those of you that want to know which Concept my library respect ( as of C++20 concept ), here is an exemplar to demonstrate how they are structured, but keep in mind that my library is C++11-compatible so no requires:
 
 ```C++
-    template< typename ... MetaExpression >
-    struct exemplar_
+    template<typename ... Types>
+    struct meta_function_name // Note: All std.type_trait meta-function respect more or less this structure  
+    {
+        using type = /* implementation defined */;
+    };
+    // A meta-function is something like std::add_const<int> where all the arguments are provided in the primary struct and the resulting type is accessed with the underlying type 'typename std::add_const<int>::type' .
+
+    template< typename ... MetaExpressions > //This line is optional or modifiable
+    struct meta_expression_name
     {
         template < typename ... Types >
         struct f
@@ -74,15 +83,15 @@ For those of you that want to know which Concept my library respect ( as of C++2
             using type = /* implementation defined */;
         };
     };
-    // A meta-function is something like std::type_trait where all the arguments are provided in the primary struct.
-    // A meta-expression have two variadic entry points : the name of the meta-expression (example_) and the input types in f  
+    // A meta-expression have two variadic entry points which are where you insert the template arguments : the name of the meta-expression (meta_expression_name) and the input types in f. You can see that f is actually a meta-function in concept, but always named f. 
 ```
 
-This means that each meta-expressions contains another variadic struct named `f` which contains a type named `type` which is the result to the meta-expression. For example, a meta-expression  would be express like this : `typename te::sort_< te::less_<> >::template f<std::integral_constant<int,3>, std::integral_constant<int,1>>::type` 
+This means that each meta-expressions contains another variadic struct named `f` which contains a type named `type` which is the result to the meta-expression. I always consider the template arguments of f as 'inputs types'.
 
-Another simple example would be to add a pointer to a type. `typename te::add_pointer::template f<int>::type `would be `int*` for example. Not all meta-expression requires others meta-expressions as "functions inputs". 
+For example, adding a pointer to a type. `typename te::add_pointer::template f<int>::type `would be `int*` for example.
+However, and this is key, the meta_expression_name's template argument (named MetaExpressions in the example above ) can also be meta-expression themselves, which I consider to be sub-expression. A good example would be meta-predicate.
 
-Obviously, my library tries to hide all ugly `typename `and `template` as much as possible. But this allows the meta-expressions to have two kinds of inputs : another meta-expression in the primary template, and "inputs" type in the sub-type `f`. My choice to abstract all of this was to create two specials meta-expressions (`te::input_` and `te::pipe_`)and an type alias( `te::eval_pipe_`).
+Obviously, my library tries to hide all ugly `typename `and `template f` as much as possible. But this allows the meta-expressions to have two kinds of inputs : another meta-expression in the primary template, and "inputs" type in the sub-type `f`. My choice to abstract all of this was to create two specials meta-expressions (`te::input_` and `te::pipe_`)and an type alias( `te::eval_pipe_`).
 
 
 ### te::input_< typename ... Ts >
@@ -160,13 +169,38 @@ This remove the template template parameter which is useful in many place. `te::
 Similar to mp11's `mp_quote`, this thing wraps multiple types into a single one defined in the template template parameter. Be cautious that it only accepts template that receive only types, no `bool` or `int` value.
 `te::eval_pipe_< te::input_<int,float,char>, te::quote_<std::tuple> >` will result into `std::tuple<int,float,char>`
 `te::eval_pipe_< te::input_<int>, te::quote_<std::vector>>` will result into `std::vector<int,std::allocator<int>> // std::vector have a default template parameter`
-This function have a sister function named `lift_<template<...> class F>` due to the std.type_trait library that need to quote then to get the nested `::type`. 
+This function have a sister function named `lift_<template<...> class F>` due to the std.type_trait library that need to quote then to get the nested `::type` to get the result. 
+Be wary of templated alias. `quote_<std::add_const_t>` and `lift_<std::add_const>` give the same answer but `quote_<std::add_const>`will result into `std::add_const<T>` because add_const_t is an alias.
 Rule of thumb : use quote most of the time, use lift if you need to use std::type_traits meta-function
 
 ### te::mkseq
 
 Similar to `std::make_sequence`, it create an `te::input_<std::integral_constant<int,0>, ... std::integral_constant<int, N-1>> ` depending on the integral_constant of N it receive.
 
+### te::transform_<typename ... MetaExpressions>
+
+This is one of my most used meta-expression. It apply the MetaExpressions to each types received. `te::eval_pipe_<te::input_<int,float>, te::transform_<te::quote_<std::add_pointer_t>,te::quote_<add_pointer_t>>>` will result in `input_<int**,float**>`
+
+### te::fork_<typename ... MetaExpressions>
+
+This is one of the most powerful meta-expression. All the received types are copied into each MetaExpression. Two example are needed to illustrate its behavior :
+```C++
+    te::eval_pipe_<te::input_<int>
+                    ,te::fork_< te::quote_<std::add_const_t>
+                                , te::quote_<std::add_pointer_t> 
+                                >
+                    ,te::same_as_<  const int
+                                    , int*>
+                    >{} = std::true_type{};
+    te::eval_pipe_<te::input_<int,float>
+                    ,te::fork_< te::push_back_<char> //push char at the end
+                                ,te::push_front_<char*> // push char* at the start
+                                ,te::input_<double> //replace with double
+                                ,te::second // get the second type
+                                >
+                    ,same_as_<te::input_<int,float,char>,te::input_<char*,int,float>,double,float>
+                    >{} = std::true_type{};
+```
 
 ## Range-ifying type manipulation 
 Let's start chaining meta-expression like we can chain functions in the Std.Range library.
@@ -195,7 +229,7 @@ OK that's a lot to digest but it show almost everything I want here
 2. `transform_` is more similar to `std::transform()` 
 3. `mkseq` only accepts `std::integral_constant<int,N> `(for the moment) and output `std::integral_constant` from 0 to N-1.
 4. `quote_std_integer_sequence` is unfortunate, but needed since the difference of signature (`quote_` only accepts type wrappers with signature `template<typename ... Ts>`  and `std::integer_sequence` have the signature `template<typename T, T ... value>`). It get the `::value` of each types and put it in an `std::integer_sequence`.
-5. `is_<typename ... Ts>` is very similar to `std::is_same` but checks if the types it receives is the same as `Ts...` 
+5. `same_as_<typename ... Ts>` is very similar to `std::is_same` but checks if the types it receives is the same as `Ts...` 
 6. I'm manipulating multiple types at the same time very easily.
 7. Local_Meta_Expr inherits all this behavior from `te::pipe_<...>`. It could have been a typedef or an alias template, but I wanted to show that it doesn't affect the behavior.
 8. This is the closest I can get to range-like syntax for manipulating types
@@ -205,7 +239,6 @@ If you squint you're eye a little and replace some commas with the pipe operator
 ### Let's show a comparison
 
 This is the example at the start of this blog :
-
 ```C++
     // range library to double each int values in a container and calculate the summation 
     
@@ -244,12 +277,6 @@ While very cool, some operations are still difficult to express in meta-programm
 # Let's open Pandora's box.
 
 Let's create meta-expression out of other meta-expressions. Since most of my meta-expression are respecting the template signature of `template< typename ...>`, even `te::pipe_<typename ... Es>` , we can use `te::quote_<...>` inside `te::eval_pipe_<...>` to create new meta-expression.
-
-Let's show some of my favorites examples, but before let me introduce `fork_`.
-
-`te::fork_<typename ... Es>` is the opposite of `te::transform_`. It copies the inputs received to each meta-expressions `Es`. so if we say `te::eval_pipe_<te::input_<i<1>>, fork_<plus_<i<2>, te::identity,te::input_<float>>>` , we end up with `te::input_<i<3>,i<1>,float>.` If you required multiple function in the same argument, you can wrap it into te::pipe_.
-
-Now that we understand fork, let's me introduce my implementation of copying types :
 
 
 ```C++
@@ -303,7 +330,23 @@ For now, I've already implemented two higher-meta-expression using `te::fork_` ,
 
 The last higher-meta-expression I want to talk about is `te::on_args_<typename ... Es>`. This solved a weird problem in template library where you have something like a `std::tuple<Ts...>` and just want to play with the inner types, then wrap with tuple. 
 
-The problem is that it's technically a series of functions that depend on the input, which is notoriously difficult since you need to add your continuation to the last meta-function which can be nested inside other meta-function. Not in my library, albeit I admit the implementation is a little bit Frankenstein. However, this is my actual solution to Arthur O'Dwyer post about template library released in December 2019 : 
+The problem is that it's technically a series of functions that depend on the input, which is notoriously difficult since you need to add your continuation to the last meta-function which can be nested inside other meta-function. Not in my library
+
+```C++
+    template <typename... Es>
+struct on_args_ {
+  template<typename ... Ts>
+  struct f {};
+  // Take the template arguments, evaluate the expression, then rewrap with the template template
+  template <template <typename... Ts> class F, typename... Ts>
+  struct f<F<Ts...>> {
+    typedef eval_pipe_<input_<Ts...>, Es..., quote_<F>> type;
+  };
+};
+
+```
+
+This is my actual solution to Arthur O'Dwyer post about template library released in December 2019 : 
 
 ```C++
     // On this challenge, the goal was to unwrap, remove empty class, sort them by
