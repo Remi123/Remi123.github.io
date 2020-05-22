@@ -72,7 +72,8 @@ For those of you that want to know which Concept my library respect ( as of C++2
     {
         using type = /* implementation defined */;
     };
-    // A meta-function is something like std::add_const<int> where all the arguments are provided in the primary struct and the resulting type is accessed with the underlying type 'typename std::add_const<int>::type' .
+    // A meta-function is something like std::add_const<int> where all the arguments are provided in the primary struct 
+    // and the resulting type is accessed with the underlying type 'typename std::add_const<int>::type' .
 
     template< typename ... MetaExpressions > //This line is optional or modifiable
     struct meta_expression_name
@@ -83,7 +84,10 @@ For those of you that want to know which Concept my library respect ( as of C++2
             using type = /* implementation defined */;
         };
     };
-    // A meta-expression have two variadic entry points which are where you insert the template arguments : the name of the meta-expression (meta_expression_name) and the input types in f. You can see that f is actually a meta-function in concept, but always named f. 
+    // A meta-expression have two variadic entry points which are where you insert the template arguments : 
+    // 1. The name of the meta-expression (meta_expression_name) 
+    // 2. the input types in f. Always raw types.
+    // You can see that f is actually a meta-function in concept, but always named f. 
 ```
 
 This means that each meta-expressions contains another variadic struct named `f` which contains a type named `type` which is the result to the meta-expression. I always consider the template arguments of f as 'inputs types'.
@@ -118,7 +122,8 @@ This is the actual implementation of the evaluation. It's similar to `te::pipe_t
     "te::same_as_ is similar to std::is_same, but check if the types receives are the same as the on in the template arguments.");
 ```
 
-This is very basic and every other library can do a variation of std::is_same. But more interesting thing will be demonstrated later in this post.
+This is very basic and every other library can do a variation of std::is_same. 
+However, more interesting thing will be demonstrated later in this post.
 
 ___
 
@@ -185,23 +190,23 @@ This is one of my most used meta-expression. It apply the MetaExpressions to eac
 
 This is one of the most powerful meta-expression. All the received types are copied into each MetaExpression. Two example are needed to illustrate its behavior :
 ```C++
-    te::eval_pipe_<te::input_<int>
-                    ,te::fork_< te::quote_<std::add_const_t>
-                                , te::quote_<std::add_pointer_t> 
-                                >
-                    ,te::same_as_<  const int
-                                    , int*>
-                    >{} = std::true_type{};
-    te::eval_pipe_<te::input_<int,float>
-                    ,te::fork_< te::second // get the second type. Could be written as get_<1>
-								,te::pipe_<second,lift_<std::add_pointer>> // Get the second and add a pointer to it
-					// pipe_<Es...> count as only one type, so you can use it to separate your function
-								,te::push_back_<char> //push char at the end
-                                ,te::push_front_<char*> // push char* at the start
-                                ,te::input_<double> //replace int,float with double
-                                >
-                    ,same_as_<float,float*,te::input_<int,float,char>,te::input_<char*,int,float>,double>
-                    >{} = std::true_type{};
+    te::eval_pipe_<
+        te::input_<int>
+        , te::fork_< te::quote_<std::add_const_t>
+                    , te::quote_<std::add_pointer_t> 
+                >
+        , te::same_as_<  const int, int*>>{} = std::true_type{};
+    te::eval_pipe_<
+        te::input_<int,float>
+        ,te::fork_< te::second // get the second type. Could be written as get_<1>
+                    ,te::pipe_<second,lift_<std::add_pointer>> // Get the second and add a pointer to it
+					// NOTE : pipe_<Es...> count as only one type, so you can use it to separate your function
+                    ,te::push_back_<char> //push char at the end
+                    ,te::push_front_<char*> // push char* at the start
+                    ,te::input_<double> //replace int,float with double
+                    >
+        ,same_as_<float,float*,te::input_<int,float,char>,te::input_<char*,int,float>,double>
+        >{} = std::true_type{};
 ```
 
 ### te::each_<typename ... MetaExpressions>
@@ -209,15 +214,20 @@ This is one of the most powerful meta-expression. All the received types are cop
 This meta-expression would be equivalent to writing `fork_<pipe_<get_<0>,...>,pipe_<get_<1>,...>>,...> ` but doing so require too much copying. There is a more efficient way to do it. The restriction is that you must provide exactly the same number of meta-expressions as you have types as inputs. Otherwise big compilation error.
 
 ```C++
-	te::eval_pipe_<te::input_<int,float,char>
-				,te::each_<identity,te::lift_<std::add_pointer>,lift_<std::add_const>>
-				,te::same_as_<int,float*,const char>
+	te::eval_pipe_<
+        te::input_<int,float,char>
+        ,te::each_< identity                     // int
+                    ,te::lift_<std::add_pointer> // float
+                    ,lift_<std::add_const>       // char
+                    >
+        ,te::same_as_<int,float*,const char>
 	>{} = std::true_type{};
-	static_assert(te::eval_pipe_<te::input_<int,float,char>
-								,te::each_<te::identity,te::identity,te::identity>
-								,te::same_as_<int,float,char>>::value
-								,"The expression each_<identity...> is exactly the same as the original input.
-								  This will become important later in the bind_<index,Es...> meta-expression");
+	static_assert(
+    te::eval_pipe_< te::input_<int,float,char>
+                    ,te::each_<te::identity,te::identity,te::identity>
+                    ,te::same_as_<int,float,char>>::value
+                    ,"The expression each_<identity...> is exactly the same as the original input.
+                      This will become important later in the bind_<index,Es...> meta-expression");
 ```
 
 ### Let's show a comparison
@@ -257,32 +267,48 @@ I mostly wanted to show that each meta-expression inside `eval_pipe_` is conside
 
 While very cool, some operations are still difficult to express in meta-programming and, up until now, all of this was a by-product of what I wanted to achieve. Let me be clear : I did not "TMP all the things" in the range library. It's very similar due to some similar ideas and concepts, but nothing more.
 
+
+## Meta-Predicate definition
+
+Some of my meta-expressions require some expression that are either unary of binary predicate. Something like 
+```C++
+    template<typename ... BinaryPredicate>
+    struct sort_;
+```
+
+This needs a little explaining, but a meta-expression binary-predicate can be multiple expressions that take 2 types and return either `std::integral_constant<bool,false>` or `std::integral_constant<bool,true>`. Nothing else. I'm not converting into them nor getting the value, albeit I'm starting to evaluate if I should.
+However, those three littles dot actually means that it's a series of function that end with either std::true_type or std::false_type. I take those BinaryPredicate, put it in another eval_pipe, look at the result and continue from there.
+
+For example, let's say you have` te::sort_<transform_<te::size>, greater_<>>`. The sort meta-expression will give two types at a time to the sub-meta-expressions. The `te::size` will transform 1 type into their size in `std::integral_constant<int,sizeof(T)>` and `te::greater_<>`, without argument, will look at those two integer_constant of their size and "return" either `true_type or false_type` depending if the first is greater than the second.
+
+
 # Let's open Pandora's box.
 
 Let's create meta-expression out of other meta-expressions. Since most of my meta-expression are respecting the template signature of `template< typename ...>`, even `te::pipe_<typename ... Es>` , we can use `te::quote_<...>` inside `te::eval_pipe_<...>` to create new meta-expression.
 
 
 ```C++
-    template<int N>
-    struct copy_ : te::eval_pipe_< te::input_<int_c<N>>,
-                                    te::mkseq,
-                                    te::transform_<te::input_<te::identity>>, 
-                                    te::quote_<te::fork_>>
-                                    {}; 
+    template<std::size_t N>
+    struct copy_ 
+        : te::eval_pipe_< te::input_<int_c<N>>,
+                         te::mkseq,
+                         te::transform_<te::input_<te::identity>>, 
+                         te::quote_<te::fork_>>{}; 
     // all of this eval to fork_<identity,identity,... > with N-1 time identity
     // copy_<int 2> inherit from te::fork_<te::identity,te::identity>
     // te::eval_pipe_<te::input_<int>, copy_<5>> result into te::input_<int,int,int,int,int>
 ```
 Technically, what we are doing here is modifying a function to be written as another one.
 
-If this is not mind-blowing enough, let's me introduce you `te::repeat_<int N,typename ... Es>` which repeats the meta-expressions N time.
+If this is not mind-blowing enough, let's me introduce you `te::repeat_<std::size_t N,typename ... Es>` which repeats the meta-expressions N time.
 
 ```C++
     template <std::size_t N, typename... Es>
-    struct repeat_ : te::eval_pipe_<te::input_<Es...>, 
-                                te::copy_<N>, 
-                                te::flatten, 
-                                te::quote_<te::pipe_>> {};
+    struct repeat_ : 
+       te::eval_pipe_<te::input_<Es...>, 
+            te::copy_<N>, 
+            te::flatten, 
+            te::quote_<te::pipe_>> {};
 
     static_assert(
         eval_pipe_<te::input_<int>,
@@ -311,7 +337,7 @@ The last example actually modified a function using variadic pack expansions. Th
 
 For now, I've already implemented two higher-meta-expression using `te::fork_` , but I'm not surprised one bit. Fork was the first meta-expression that blew my mind. I remember my big meta-functions that wasn't working, replacing it by fork and three little dot and seeing it work perfectly on the first try. I was flabbergasted the whole day. 
 
-The last higher-meta-expression I want to talk about is `te::on_args_<typename ... Es>`. This solved a weird problem in template library where you have something like a `std::tuple<Ts...>` and just want to play with the inner types, then wrap with tuple. 
+The last higher-meta-expression I want to talk about is `te::on_args_<typename ... Es>`. This solved a weird problem in template library where you have something like a `std::tuple<Ts...>` and just want to play with the inner types, then wrap with whatever the template template was. 
 
 The problem is that it's technically a series of functions that depend on the input, which is notoriously difficult since you need to add your continuation to the last meta-function which can be nested inside other meta-function. Not in my library
 
@@ -337,16 +363,19 @@ This is my actual solution to Arthur O'Dwyer post about template library release
     // signature of the type accept only types.
     struct Z {};  // EMPTY CLASS
 
-    using MetaFct = te::on_args_<
-                       te::remove_if_<te::lift_<std::is_empty>>,
-                       te::sort_<te::transform_<te::size>, te::greater_<>> // Get their sizeof and compare if greater.
-                       >;
+    using MetaFct = // Something to make it more readable
+        te::on_args_<
+            // Remove if the type is empty
+           te::remove_if_<te::lift_<std::is_empty>>
+           // Get their sizeof and compare if greater.
+           ,te::sort_<te::transform_<te::size>, te::greater_<>> 
+           >;
 
     static_assert(
       te::eval_pipe_<
-          te::input_<std::tuple<Z, int[4], Z, int[1], Z, int[2], int[3]>>,
-                    MetaFct
-                    te::same_as_<std::tuple<int[4], int[3], int[2], int[1]>>
+          te::input_<std::tuple<Z, int[4], Z, int[1], Z, int[2], int[3]>>
+          ,MetaFct
+          ,te::same_as_<std::tuple<int[4], int[3], int[2], int[1]>>
         >::value, "Arthur O'Dwyer");
     // No unwrap, no as_lambda, no custom implementation. Simply on_args. 
 ```
@@ -355,31 +384,18 @@ Since we have abstracted the whole unwrap-wrap, might as well test this function
 
 ```C++
     static_assert(
-      te::eval_pipe_<
-          te::input_<
-            std::tuple<Z, int[4], Z, int[1], Z, int[2], int[3]>,
-            te::ls_<int[2], Z, int[1], Z, int[3]> // just a type_list named ls_
-          >,
-          te::transform_< MetaFct  >, // The same MetaFct as previous example.
-          te::same_as_<
-                std::tuple<int[4], int[3], int[2], int[1]>
-                , te::ls_<int[3],int[2],int[1]>
-              >
-        >::value, "Arthur O'Dwyer but with multiple types");   
+    te::eval_pipe_<
+      te::input_<
+        std::tuple<Z, int[4], Z, int[1], Z, int[2], int[3]>
+        ,std::variant<int[2], Z, int[1], Z, int[3]> // just a type_list named ls_
+      >,
+      te::transform_< MetaFct  >, // The same MetaFct as previous example.
+      te::same_as_<
+            std::tuple<int[4], int[3], int[2], int[1]>
+            , std::variant<int[3],int[2],int[1]>
+          >
+        >::value, "Arthur O'Dwyer's test but with multiple types");   
 ```
-
-## Meta-Predicate definition
-
-Some of my meta-expressions require some expression that are either unary of binary predicate. Something like 
-```C++
-    template<typename ... BinaryPredicate>
-    struct sort_;
-```
-
-This needs a little explaining, but a meta-expression binary-predicate can be multiple expressions that take 2 types and return either `std::integral_constant<bool,false>` or `std::integral_constant<bool,true>`. Nothing else. I'm not converting into them nor getting the value, albeit I'm starting to evaluate if I should.
-However, those three littles dot actually means that it's a series of function that end with either std::true_type or std::false_type. I take those BinaryPredicate, put it in another eval_pipe, look at the result and continue from there.
-
-For example, let's say you have` te::sort_<transform_<te::size>, greater_<>>`. The sort meta-expression will give two types at a time to the sub-meta-expressions. The `te::size` will transform 1 type into their size in `std::integral_constant<int,sizeof(T)>` and `te::greater_<>`, without argument, will look at those two integer_constant of their size and "return" either `true_type or false_type` depending if the first is greater than the second.
 
 
 ## Binding with bind_<int index,UnaryFct...> and bind_on_args_<int index,UnaryFct...>
